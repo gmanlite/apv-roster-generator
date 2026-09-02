@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APV Code Replacement Generator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap');
+  :root{
+    --bg:#ffffff; --panel:#ffffff; --panel2:#faf9f8; --line:#e6e2df;
+    --text:#2d2d2d; --muted:#7d746f; --accent:#fd1a1a; --accent2:#2d2d2d;
+    --ok:#1e7f45; --warn:#a8761b; --err:#d11f1f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.65 'Jost','Century Gothic',Futura,'Trebuchet MS',sans-serif}
+  header{padding:34px 24px 24px;border-bottom:1px solid var(--line);text-align:center}
+  header .logo{width:172px;height:auto;display:block;margin:0 auto 20px}
+  h1{margin:0;font-size:25px;font-weight:300;letter-spacing:.16em;text-transform:uppercase}
+  header p{margin:12px auto 0;color:var(--muted);font-size:13.5px;max-width:640px}
+  main{max-width:1080px;margin:0 auto;padding:30px 24px 70px;
+       display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:2px;padding:20px 22px}
+  .card.wide{grid-column:1 / -1}
+  .card h2{margin:0 0 14px;font-size:12px;text-transform:uppercase;
+           letter-spacing:.18em;color:var(--muted);font-weight:500}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:12px 0 5px;
+        text-transform:uppercase;letter-spacing:.1em}
+  select,input[type=text],input[type=date]{
+    width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:2px;padding:9px 11px;font-size:14px;font-family:inherit}
+  select:focus,input:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:10px}
+  .row > *{flex:1}
+  .row .narrow{flex:0 0 118px}
+  button{background:var(--accent2);color:#fff;border:0;border-radius:2px;
+         padding:11px 20px;font-size:12.5px;font-weight:500;cursor:pointer;
+         font-family:inherit;text-transform:uppercase;letter-spacing:.12em}
+  button:hover{background:var(--accent)}
+  button:disabled{background:#ece8e5;color:#b3aca7;cursor:not-allowed}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  button.ghost:hover{background:transparent;border-color:var(--accent);color:var(--accent)}
+  .radio,.check{display:flex;align-items:flex-start;gap:9px;margin:8px 0;
+                font-size:13.5px;color:var(--text);cursor:pointer;text-transform:none;
+                letter-spacing:0}
+  .radio input,.check input{margin:4px 0 0;accent-color:var(--accent)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.55}
+  .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .actions.onerow{flex-wrap:nowrap}
+  .actions.onerow button{flex:1 1 0;min-width:0;padding:10px 8px;font-size:10.5px;
+                         letter-spacing:.08em;white-space:nowrap}
+  .status{font-size:13px;color:var(--muted);min-height:20px;margin-top:11px}
+  .status.ok{color:var(--ok)} .status.err{color:var(--err)} .status.busy{color:var(--accent)}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:2px;padding:14px;
+      max-height:320px;overflow:auto;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;
+      color:#3c3936;margin:0;white-space:pre;tab-size:12}
+  .tabs{display:flex;gap:6px;margin-bottom:12px}
+  .tabs button{background:transparent;border:1px solid var(--line);color:var(--muted);
+               padding:6px 13px;font-size:11px;font-weight:500}
+  .tabs button.on{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+  .meta{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:12px 0 0}
+  .meta b{color:var(--text);font-weight:600}
+  .notes{margin:12px 0 0;padding:0 0 0 18px;font-size:12px;color:var(--warn)}
+  .diag{list-style:none;margin:14px 0 0;padding:12px 14px;font-size:12.5px;
+        background:var(--panel2);border:1px solid var(--line);border-radius:2px}
+  .diag li{padding:3px 0;display:flex;gap:9px;align-items:baseline}
+  .diag .mark{flex:0 0 14px;font-weight:700}
+  .diag .pass .mark{color:var(--ok)} .diag .fail .mark{color:var(--err)}
+  .diag .name{flex:0 0 124px;color:var(--text)}
+  .diag .why{color:var(--muted)}
+  .hidden{display:none}
+  @media(max-width:820px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <img class="logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAADTBAMAAABesZTkAAAAMFBMVEUAAAD+/v7+AAD9AAABAAAAAAAAAAD6AAD6AAB1dXWjAACjAACjAACjAAB1dXUAAAD+ERtsAAAAEHRSTlP9//gKL6Nnn1//CvpfpR0AwgLI1wAAEl1JREFUeNrtnW9oHGd+xz+7pxlpoymSoMVX8FF378Wl9oFCtAE7KtVApJjGAx5fY8W9KFgGGbk0QXu5pEkTH95Lzo2S+LDypqSxKQtVLuTywtN2W6LabRYqNe3dlAstR1toS94cbaMXmqBnJdmrePtidmd3NbO788zuahPIAyHI+zwz3/k939/f57ezsRLtjeNDkguGrtHuiLUJ+uGb0kvU2z0GvTUYYVFfsU3Q8faWPx5l0W66p5L+dDjSsnYJ0p6kZ6Mtu2P2UNLb90RcOOT0TtKPRNbfHko6BqCck1pTugZw0moHdF877ABQ7kiuKmaB4Z5J+tNh4Gw2iiK0Zz/a4XQaQBYzCRO40zNJx6KJ7NNhYGGpN5LeBkhEcC0ATo/ocQdAl1+XAHi7R6DTgBLFdM1WrGUPQDtAJI1YAoq9AV2wokZ5qmd69h10jKhOIhHJVHYEdLGy09FIvd0T0OnKRkcjdTsxT6vYY2rP34NWrR4mot1UAYqm1S3Q27f2RsJ1etgomC88zQax4bvXOq0ObUZ5sYZ+rfCd9YoQr0/fthppYjvBaanp8EXrQ5VPnEaLz9cvmD4ZMGcWUEuRR2TQDe675WfMo/5ZTmtxdQU0QF8rMZediW9aAeBkZNCtOV2TTt2peoRCYNXjXKDLuKM+YnVWE1tKeqhOQEO1sloIoGrwg++Vat2mdYEefYGgg1jZpAqidFQTo0o64K51obVy+vTpJrxuTxOjgvbvb8Fv5sT5qi3p66AmtgBdaECPLYCzwXZmuvafH/Zg1ymA8K3fB0n7JWU20jnPCvqmD3UJ9N4xudDgAz1IzO6Yamiu9wl0Kyf0aLMPFz5noGebYPZQK58v0FstCFBmyNnPFWizFWlnw7jf/QVdCDAPgY819DkCbbbe/K1OipqOMbqFRdM7yOqmVdPjQ8UWSdHCkheQ1tVBj/+aAyP/V7v6lOWV4FvVxE6P/EnU0PTh1mdQiueSa729OB+UaxWqtjrEodh0JHqIMMdtQ17EVqOFdRnXo3uYr+6JrRrLY0Ee9Faoo74FD0yfz2v7nHehurOEvrgM6K3wac9WvaDPN84QTU8VZ9tDHQxahCx/emahr4Gc61A73l8hzwEWpECHPAY+681daLZDZ2szQ06G38hG7oomTjfUNbfqQiGzqcR07xHCFv3C2+nqkffpEf67yTVv7j1MrC0hTA951bHKEVj1CLHQbC+TG+95m5QNa6fNZhWtwMlB5DhZY+nPBkxuNqqWfiEkPSpaMhfGo4paVZv18XGqXjRO6FygYnLVcKCFVJ5RqBFkIUCJCnXVtK3woZ4wG8OgkaBD5kZ6jZKbQZpfqBO1GT5XFI2DdD9ouSSjBsVWsLmarb2eLhGfbjWUHsGCDps5i5r9nm1gY80a41WQSXALBJdm/aBNqRS0FkQjx1AT3tU9ZNh0ubWddm106CaOT4e9g6q9LXrV5plzWbxmvFOWr3Nhuu6vH/vABDQ8BSlW+Fy/pg4529AF1zpN3X/5JngaoCFIDcMnRTXVrSZxQ014UvALqgloERyBEMBRiaJK9RELTUAXqkze8mtis52fDdSBPSe2JwC+LdenMlxd2WDc4811T+PCd6j8MUEn0nvOXIblztpL1fPxpicoet5rWzIt/xFiX6V8eXDvrROmFdTw1DiSCDEcj0yiaSxcYxlnfaa3/nAyyG2cbUqPGMDvhj9lMr16QPOqwD3VDVyS6yJQgw53435KS3RiHPIO9YthmyUUuQ6EhIm/yzPuo7RMO4TjHeqnwzZLxCR7gZyA+fWKaEm2Q1ieBjohmiUAuFvRxtoWgErYfdC/8q8GgfRSY9DblZ2UH1YIM5NeAgYrtKoZu7daqIPThB4lyQ6fAsDHhGjuGTSJ2kBo+kUS39uWpMj2ElmEUa1h79ay8B2/TPr2tiXJdvk1fMg/jzWGL0W8YZ9M+vY+lIwelur2KByb/BpwOqwOB3tE2bJ3wfOfeugqWkmXPMbY8gd68XZ3r+sj4Tc38UBjEHIU61xjSDZZdUQJaT6chqDj7TZx7deIhzUGvRt+wvb9YrY+xpuSuNyut0ALxaapyqK4zF0OAm//otZT8eX4cnw5vhxfji/ieGNkpHkGkxhxR7N2gRBTSIyMjPxqg89iIw1QBEfqiQFofqwa85zrpYaJ+EjrKSQGgI0Gkss0QBFcN9mRyAa+H2LKUmd5EG//EsMdebD2QS+VpR1qxDrzYG2DzkjVEkJMTHQfdKKKvOlYdP/3auvb7HQf9E446ZTmNxZbzdkoT1naJ0XcCbHn85mWE+c7K+WGoCXEkm49ZTsc19oFnQmPfSDEnMx+SDrRrZt1E/ROV+zUPijiQAft1L7QYwl4LiSpd3rB63iDG6RD3iWEf47tBz0SwADpUOJ5w7Npja35cEjT2BboHY/ULTRxZ2Qk02TrE24iMBDWMratiNsSEcNACCk+FwVbWgL0EpBxYYdyjXvYcdOK5jjbk3TGvUlofa9PiOLzAVMudVsRE2UKhtNEH6BDCTMSgWRCoHhDfxhCEwOS1jiX/XP+Z1884nb5vxaauLi4uJFuLmi5HCjk8H8xeCkDiVdhJwMsNdvYAT99B7lcD3phpAt+PNa4WgFNih+xYRjwb3uypnU5MQBcimUCJ7ZV9+jraAoad5sMam1dYqDTGWIAp3faeYRD/hO97c5XEPygl9rIouNBD5npfGTeqsIkpfhW0KlmGthZ6q4ijuwpEzjhFXHwQN03CMo6lhhoptCtFHEgAzDfXBETVMG8IWmq3kkH0WB7MQMJJ6JQd54PQY9aEj8vx8bBdL033O4aP2IB2+7t5UjjrQugR/xQ4uc+pm3QnB/N6FGtgW80l/RSrQPLSGnioQbNBduZTudc8eC4NEJGOtjwAdOdjj/iwXFphND9HQKCUi9ejBJ/hA1Nd3x3S4RXw0atJx3nR9wvlOfq79ZQegPP1QvaJ5nFyq493yRXy3hlbt94vm6rulGUSLLHdoQff3HXbDc0jbhjh5p+n64psQ7c/bizsUf4sCNyUPQOPRqDyWQyMrGSFj2R9HZb4afZG9CHCMrCQzol6cftDOg4DT1LCEoXpG9ndkYNow/5Qo7Sd6N9yMW7h+Hkz5Soa7/9gKydLnVA0GMO6r9FW6pvOnyN/L5zWrynQzEVkRw66k1JzJ2QdPGzI3DuVj7SA+sbxD7S9t96TL0OyqGIi1dhxpBdJPfiyhTYPmGJLHzlsZlImI3NKO/OlJO0bdv+f1wDzk9FpJYesmE8OqeLP8zOWHth6w9lYUSLRmlGUX+qdRO0YBSffRL6BgxEDKXFhBMFtLQimgGqxHk9GmjDhGJ/VzkdeHXjdVDn8tEELbKo/6l0FXTQi+pFLgvzRjRBswbzgu5ajwCZ6JOAiIjZehDmDPafHuOgHorGDq7rqHqEtX2y9HDqjWB+FIoRw1shLIpRnrdNN/7uBGBGpfQqPGnsB+jhvRuMkomI2RhHmdsXSVt7N5hdIlJa6MQiGfg2ncsq0Q2eWLN4TIuysq8tSd/6V1B+79mI9Jgg4h61JWkxmYVdHSAln7kYJ1Byefab0/2TwJMaIIJi1lbDYff4/kt66gQoywDG4g+kKZ2zmIn2TcJ2flhJiCzs5jUQ4pqS1uRvndO6L2mF+jzjA+CgUcleJMet11E/jKaIMklA8e5h+K/6nEWxNSBVcrycWhjhkKQ2iA3buG8s6W5oeo+5hx06gKZ7OXUxJGYBmFokzHL0KMGOVZ/RurYjZ5GrUCinh/Nyq2UrnU91XREHhKc7eglY1tyrqHmt7JpPNhGd0KlkwHrJXSMmHdHtYs2fejcQmgOxiip9q8yO/tVs45RAGLZd2RFNJ66D0Ne7m25hwY+re78CzLj1jt2Ry2XwU+NNvtls5BbvNXQv1DqtAasRfmNJhh7GJvz1z2vZobiGVtPtMidEbpRl730oKXuPO7lkkSo/3eoR7rsPjIcifFVdxuTpmw4D/1QRpD5mebVDodvVKV4hQ2h19BbGQ1lQ/0UpT1Q0m9TaYfj+9Xx3Of3bHoQVCx4zAMT4dbsiy0o2JlIpoX2vDoyxkgWz5Ob0wmQ3D/ZrlL8pLxNxyYKOeYJ+sOoI//ZN4TJVvwqUdCgatq2lfmRZQKrM4twLoDxQdEmtOaCTejcLLIFIyURcUqDNmvf6aDqobmSpjxevALCcz3KeorY8PpV79Q+fWeWjJaBsMKwJC+WCYaYrevikJuyfEAOdlGEfe36+a3Z6cLwm0XrM9X7amPskYmYRfh3E9bXPxteJfYA1DPrOmTkNxJIDF+Z0GxPQV49wCGNnnfk3QdjFVz95L9ctegw+U5toubcp5izXtxlHr/HECdByx/5gnXMHTWZBsP6mBhhrEJvTN5YsQNjjKJPi9jqxZ00s+/YP3yL2H90CffebtSW8crbU52YgQqyjvAj8/tVPLKZv3cxiueZ8HFK5F+CgpeAsAcYxh120R+CgPoy5ePga6kGzO/RwvBetCJGFx11WTG2678zoz4/yldu4fRrqK+K3UHIaxia7K6Tsly2UnPE39y1/BKn8aPmKpzI6/BmgHMh1RRHFTYtdR/eCpcGLdkU/Zwxgqg/Ol6OlUwdS+h12jyOEA6TsY1mI6SKDAuLDq8CMnsuO2IZrjdSZnNEd63EbKBdX9Afhs5Qn9HwaRO5F1OV0HkC5krM1mFHQVwHdPvoJMM+aRQlhHM0C+TRP2bmca9nnLxr57tlps2rwTmsVoSvCRBgTFq/0z1wF1MWUATp9CO1FwD62Dqhz2muwq2u3HQBxXUunjFsTFihfnUvJOEVJ0DGravDynpeJ5cFYcTgzqRzLAgcmbdcWor9vQf/RT9xAcCUL2O8+iGKi5PNi2RaTDmCsGVLJvAxoBUrX9YrBq9QsNJOiax3Uy/rNT0A5lTPcxGA5Z78I7KwD8Bu5FwDl1RcsLgyzC9qMsH8GTGeW5YIPSecSc8M6Y7Pa/SQc+nXsly0eS2mLwMAVPQ8oKHnjgsWpGwCz2djMyxZK8c5bEEt/t2w4d9ZBfSUlWTSRiPJE35FykCf0CYtTLgUEo4xgH11HHdTePwI8tWwDQjmsDuZHUeyrWTjzvvPE++vwxPvroB4o/i/nbuXd47JyetvFKO+ya5jWrLoCr2YfXYcD+dyLAL/sZQEfXoUz+vdmuXAZEuugPvP3Jszn/s4N7YyrYDLT5SM5xcxXDN5AJVbuh9TiOlzIGTcsplHdOf3A0SzKM5r1na8+m/oH3gIeZ+qPODdnlcACsZJFhRzdBV38qFIx4NGKfO6a3LgGp57VcxnUD7wfER7njgMX9LxprKXs4yYQu2jk+kcuGteLKAKM12DQIt3VukexfA4ghAXeaxvjFoB6ZZlJmC9W3n+raMOAOmdDLmUj1kC9ouc1Yafy6MQ+zBdzWWKrUX7sVAK0ocNHFYOnVoq02lQWlOkDqZmLJ1DnHA5edD/I/fOvoL5iAJoN+X+cnT5wIg+aayqKt5magIOv039dHnX4t+1N3J9MniyVSqUb9yeTlyYq/7y5+/Q3LpXulDZ3kslL9ye/MVb5ZKI0dmPTWz22Wdr0Pnkp+fXNzbGnk/fuJJMvT3Tz534m7k8mfzJRKm1OJJPJseqtbmxOjI1NlMbuT95bejr53RqcVZilUmmiumTipeSlic3t5DcmXkreu9mNX6L01U1ZOYyS12rCkZzm5i/zO5ZypZqB26nahorasm7WdVBGZpR5Q1oPZZyLvunw7wqkSk69QxBGHoS+of70khXGUwjt6zxlMWZ9bdNxq65dreUplZSw7v20rjxXj/RPOMx+M8RlxsES+VF15TC7ut1V64GJWjZ4qv+AxxinT+dUOkTSpCkmoPCt11CuRMAsBdpx30G6CvGAaq6pnLTK5wIhTlugxC9l2Z3s/plL0QLjIXj746APsyjLF8NeSnuPazCrd1vSUCpSFFmYWwrcB2XRDpNSa4bp1pU4dzEKZtmASeH2KsTywWbqdybDHQKIfPnnytPRmj2lzxH1cYKZm0e9HLJ388M1+MEayoFI5JAFfVeg6UG2A3JryiupkPUW5S/fhl3lQi4aZinnMmadeWCSUdRBO+g4RZM8yrTMKK1A8tbj9H2pEjwe9DZxzZY47ylO5RGRMUvSI69rOvcER+1CokSk5EGLjFkStF5csTgebCKku00jY5akh5M/inKFXg8ZSQ8zN6UzsPyFAg3KisXs9Z6DloynTat8pPZFAS1uZED++x09Bt13hCgt2r3l9G/C9OO3eo9ZxuRpWt+ZNJ+H8f/eR0VWu3BfwQAAAABJRU5ErkJggg==" alt="April Visuals">
+  <h1>Code Replacement Generator</h1>
+  <p>Pick a league, pick a game, get a Photo Mechanic code replacement file. Nothing is stored — rosters go straight from the live feed to your download.</p>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>1 &middot; Game</h2>
+
+    <label for="league">League</label>
+    <select id="league">
+      {% for lg in leagues %}
+      <option value="{{ lg.key }}" data-window="{{ lg.default_window }}">{{ lg.label }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="row">
+      <div>
+        <label for="date">Date</label>
+        <input type="date" id="date" value="{{ today }}">
+      </div>
+      <div class="narrow">
+        <label for="window">Window</label>
+        <select id="window">
+          <option value="1">That day</option>
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="actions onerow">
+      <button id="loadGames">Load schedule</button>
+      <button class="ghost" id="toggleManual">Pick teams</button>
+      <button class="ghost" id="diagnose" title="Check the live data connection this app uses">Test connection</button>
+    </div>
+
+    <div id="diagBlock" class="hidden">
+      <ul class="diag" id="diagList"></ul>
+    </div>
+
+    <div id="scheduleBlock">
+      <label for="game">Game</label>
+      <select id="game"><option value="">Load a schedule first</option></select>
+    </div>
+
+    <div id="manualBlock" class="hidden">
+      <label for="homeTeam">Home team</label>
+      <select id="homeTeam"></select>
+      <label for="awayTeam">Away team</label>
+      <select id="awayTeam"></select>
+      <p class="hint">Team lists come from the same league feed the schedule uses.</p>
+    </div>
+
+    <div class="row" style="margin-top:6px">
+      <div>
+        <label for="homePrefix">Home prefix</label>
+        <input type="text" id="homePrefix" maxlength="10" autocomplete="off">
+      </div>
+      <div>
+        <label for="awayPrefix">Away prefix</label>
+        <input type="text" id="awayPrefix" maxlength="10" autocomplete="off">
+      </div>
+    </div>
+    <p class="hint">Prefix is always prepended: <b>KC</b> + <b>15</b> = KC15, <b>KC</b> + <b>HC</b> = KCHC. Auto-filled from the team abbreviation — edit freely.</p>
+
+    <div class="status" id="gameStatus"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 &middot; Output</h2>
+
+    <label>Code format</label>
+    {% for value, text in formats %}
+    <label class="radio">
+      <input type="radio" name="format" value="{{ value }}" {% if loop.first %}checked{% endif %}>
+      <span>{{ text }}</span>
+    </label>
+    {% endfor %}
+
+    <label style="margin-top:14px">Options</label>
+    <label class="check">
+      <input type="checkbox" id="coaches" checked>
+      <span>Include head coaches (code: PREFIX + HC)</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="separate">
+      <span>Download separate files per team instead of one combined file</span>
+    </label>
+
+    <div class="actions">
+      <button id="generate" disabled>Generate roster file</button>
+    </div>
+    <div class="status" id="genStatus"></div>
+  </section>
+
+  <section class="card wide hidden" id="resultCard">
+    <h2>3 &middot; Result</h2>
+    <div class="tabs" id="tabs"></div>
+    <pre id="preview"></pre>
+    <div class="meta" id="meta"></div>
+    <ul class="notes hidden" id="notes"></ul>
+    <div class="actions" id="downloads"></div>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const state = { games: [], teams: [], manual: false, result: null, tab: 'combined' };
+
+  const setStatus = (el, msg, cls) => { el.className = 'status' + (cls ? ' ' + cls : ''); el.textContent = msg; };
+
+  function selectedLeague() { return $('league').value; }
+
+  function syncWindowDefault() {
+    const opt = $('league').selectedOptions[0];
+    $('window').value = opt.dataset.window || '7';
+  }
+
+  async function api(url, opts) {
+    const r = await fetch(url, opts);
+    const data = await r.json().catch(() => ({ error: 'Bad response from server' }));
+    if (!r.ok) throw new Error(data.error || ('Request failed: ' + r.status));
+    return data;
+  }
+
+  // ---- schedule ----------------------------------------------------------
+  async function loadSchedule() {
+    const btn = $('loadGames');
+    btn.disabled = true;
+    setStatus($('gameStatus'), 'Loading schedule...', 'busy');
+    try {
+      const d = await api(`/api/schedule?league=${selectedLeague()}&date=${$('date').value}&days=${$('window').value}`);
+      state.games = d.games;
+      const sel = $('game');
+      sel.innerHTML = '';
+      if (!d.games.length) {
+        sel.innerHTML = '<option value="">No games found in that window</option>';
+        setStatus($('gameStatus'), 'No games in that window. Try a wider window or pick teams manually.', 'err');
+      } else {
+        d.games.forEach((g, i) => {
+          const o = document.createElement('option');
+          o.value = i;
+          const when = g.date ? new Date(g.date).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+          o.textContent = `${when} — ${g.label}`;
+          sel.appendChild(o);
+        });
+        sel.value = '0';
+        onGameChange();
+        setStatus($('gameStatus'), `${d.games.length} game${d.games.length > 1 ? 's' : ''} loaded.`, 'ok');
+      }
+    } catch (e) {
+      setStatus($('gameStatus'), e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      refreshGenerate();
+    }
+  }
+
+  function onGameChange() {
+    clearResult();
+    const g = state.games[$('game').value];
+    if (!g) return;
+    $('homePrefix').value = (g.home.abbreviation || '').toUpperCase();
+    $('awayPrefix').value = (g.away.abbreviation || '').toUpperCase();
+    refreshGenerate();
+  }
+
+  // ---- manual team picking ----------------------------------------------
+  async function loadTeams() {
+    setStatus($('gameStatus'), 'Loading team list...', 'busy');
+    try {
+      const d = await api(`/api/teams?league=${selectedLeague()}`);
+      state.teams = d.teams;
+      [['homeTeam', 'homePrefix'], ['awayTeam', 'awayPrefix']].forEach(([sid]) => {
+        const sel = $(sid);
+        sel.innerHTML = '';
+        d.teams.forEach((t, i) => {
+          const o = document.createElement('option');
+          o.value = i; o.textContent = t.name;
+          sel.appendChild(o);
+        });
+      });
+      $('awayTeam').value = state.teams.length > 1 ? '1' : '0';
+      syncManualPrefix('home'); syncManualPrefix('away');
+      setStatus($('gameStatus'), `${d.teams.length} teams loaded. Type in a list to jump to a team.`, 'ok');
+    } catch (e) {
+      setStatus($('gameStatus'), e.message, 'err');
+    }
+    refreshGenerate();
+  }
+
+  function syncManualPrefix(side) {
+    clearResult();
+    const t = state.teams[$(side + 'Team').value];
+    if (t) $(side + 'Prefix').value = (t.abbreviation || '').toUpperCase();
+    refreshGenerate();
+  }
+
+  function toggleManual() {
+    clearResult();
+    state.manual = !state.manual;
+    $('scheduleBlock').classList.toggle('hidden', state.manual);
+    $('manualBlock').classList.toggle('hidden', !state.manual);
+    $('toggleManual').textContent = state.manual ? 'Use schedule' : 'Pick teams';
+    if (state.manual && !state.teams.length) loadTeams();
+    refreshGenerate();
+  }
+
+  function currentTeams() {
+    if (state.manual) {
+      const h = state.teams[$('homeTeam').value], a = state.teams[$('awayTeam').value];
+      return h && a ? { home: h, away: a } : null;
+    }
+    const g = state.games[$('game').value];
+    return g ? { home: g.home, away: g.away } : null;
+  }
+
+  function refreshGenerate() {
+    $('generate').disabled = !currentTeams();
+  }
+
+  // Wipe the result panel. Called whenever an input changes in a way that would
+  // alter the generated file, so what is on screen always matches the controls
+  // above it — you can never download a roster for the game you just navigated
+  // away from.
+  function clearResult() {
+    if (!state.result) return;
+    state.result = null;
+    state.tab = 'combined';
+    $('resultCard').classList.add('hidden');
+    $('tabs').innerHTML = '';
+    $('preview').textContent = '';
+    $('meta').innerHTML = '';
+    $('notes').innerHTML = '';
+    $('notes').classList.add('hidden');
+    $('downloads').innerHTML = '';
+    setStatus($('genStatus'), '', '');
+  }
+
+  // ---- generate ----------------------------------------------------------
+  async function generate() {
+    const teams = currentTeams();
+    if (!teams) return;
+    const btn = $('generate');
+    btn.disabled = true;
+    setStatus($('genStatus'), 'Pulling rosters and building codes...', 'busy');
+    try {
+      const payload = {
+        league: selectedLeague(),
+        home_id: teams.home.id,
+        away_id: teams.away.id,
+        home_prefix: $('homePrefix').value.trim(),
+        away_prefix: $('awayPrefix').value.trim(),
+        format: document.querySelector('input[name=format]:checked').value,
+        include_coaches: $('coaches').checked
+      };
+      const d = await api('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      state.result = d;
+      state.tab = $('separate').checked ? 'home' : 'combined';
+      renderResult();
+      setStatus($('genStatus'), `Done — ${d.home.codes + d.away.codes} codes across both teams.`, 'ok');
+    } catch (e) {
+      setStatus($('genStatus'), e.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function download(filename, content) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  function renderResult() {
+    const d = state.result;
+    if (!d) return;
+    $('resultCard').classList.remove('hidden');
+
+    const separate = $('separate').checked;
+    const tabDefs = separate
+      ? [['home', d.home.team + ' (home)'], ['away', d.away.team + ' (away)']]
+      : [['combined', 'Combined file'], ['home', d.home.team], ['away', d.away.team]];
+
+    const tabs = $('tabs');
+    tabs.innerHTML = '';
+    tabDefs.forEach(([key, label]) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.className = state.tab === key ? 'on' : '';
+      b.onclick = () => { state.tab = key; renderResult(); };
+      tabs.appendChild(b);
+    });
+
+    const shown = d[state.tab] || d.combined;
+    $('preview').textContent = shown.content;
+
+    $('meta').innerHTML =
+      `<span><b>${d.home.players}</b> ${d.home.team} players</span>` +
+      `<span><b>${d.away.players}</b> ${d.away.team} players</span>` +
+      `<span><b>${d.home.entries + d.away.entries}</b> total lines (upper + lower case)</span>`;
+
+    const notes = [...d.home.log, ...d.away.log];
+    const ul = $('notes');
+    ul.innerHTML = notes.map(n => `<li>${n.replace(/</g, '&lt;')}</li>`).join('');
+    ul.classList.toggle('hidden', !notes.length);
+
+    const dl = $('downloads');
+    dl.innerHTML = '';
+    const files = separate ? [d.home, d.away] : [d.combined];
+    files.forEach(f => {
+      const b = document.createElement('button');
+      b.textContent = 'Download ' + f.filename;
+      b.onclick = () => download(f.filename, f.content);
+      dl.appendChild(b);
+    });
+    const copy = document.createElement('button');
+    copy.className = 'ghost';
+    copy.textContent = 'Copy shown text';
+    copy.onclick = () => navigator.clipboard.writeText(shown.content)
+      .then(() => setStatus($('genStatus'), 'Copied to clipboard.', 'ok'));
+    dl.appendChild(copy);
+  }
+
+  // ---- diagnostics -------------------------------------------------------
+  async function runDiagnostics() {
+    const btn = $('diagnose');
+    btn.disabled = true;
+    $('diagBlock').classList.remove('hidden');
+    $('diagList').innerHTML = '<li><span class="mark">·</span><span class="why">Testing connection...</span></li>';
+    setStatus($('gameStatus'), '', '');
+    try {
+      const d = await api(`/api/diagnose?league=${selectedLeague()}`);
+      $('diagList').innerHTML = d.results.map(r =>
+        `<li class="${r.ok ? 'pass' : 'fail'}">` +
+        `<span class="mark">${r.ok ? '✓' : '✗'}</span>` +
+        `<span class="name">${r.step}</span>` +
+        `<span class="why">${String(r.detail).replace(/</g, '&lt;')}</span></li>`
+      ).join('');
+      const bad = d.results.filter(r => !r.ok).length;
+      setStatus($('gameStatus'),
+        bad ? `${bad} of ${d.results.length} checks failed — detail above.`
+            : `All ${d.results.length} checks passed for ${d.league}.`,
+        bad ? 'err' : 'ok');
+    } catch (e) {
+      $('diagList').innerHTML =
+        `<li class="fail"><span class="mark">✗</span><span class="why">${e.message}</span></li>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ---- wiring ------------------------------------------------------------
+  $('league').addEventListener('change', () => {
+    clearResult();
+    state.games = []; state.teams = [];
+    $('game').innerHTML = '<option value="">Load a schedule first</option>';
+    $('homePrefix').value = ''; $('awayPrefix').value = '';
+    $('diagBlock').classList.add('hidden');
+    setStatus($('gameStatus'), '', '');
+    syncWindowDefault();
+    if (state.manual) loadTeams();
+    refreshGenerate();
+  });
+  $('diagnose').addEventListener('click', runDiagnostics);
+  $('loadGames').addEventListener('click', loadSchedule);
+  $('game').addEventListener('change', onGameChange);
+  $('toggleManual').addEventListener('click', toggleManual);
+  $('homeTeam').addEventListener('change', () => syncManualPrefix('home'));
+  $('awayTeam').addEventListener('change', () => syncManualPrefix('away'));
+  $('generate').addEventListener('click', generate);
+
+  // Anything that changes the CONTENT of the file invalidates a shown result.
+  // Prefixes listen on 'change' (fires on blur), not 'input', so typing does not
+  // wipe the panel mid-keystroke.
+  document.querySelectorAll('input[name=format]')
+    .forEach(r => r.addEventListener('change', clearResult));
+  $('coaches').addEventListener('change', clearResult);
+  $('homePrefix').addEventListener('change', clearResult);
+  $('awayPrefix').addEventListener('change', clearResult);
+
+  // "Separate files" only changes packaging, not content, so re-render instead.
+  $('separate').addEventListener('change', () => {
+    if (state.result) { state.tab = $('separate').checked ? 'home' : 'combined'; renderResult(); }
+  });
+
+  syncWindowDefault();
+})();
+</script>
+</body>
+</html>

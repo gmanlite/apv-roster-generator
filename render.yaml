@@ -1,0 +1,18 @@
+# render.yaml — Render Blueprint.
+#
+# With this file in the repo, Render configures the service itself: you connect
+# the repo and click Apply, rather than filling in build and start commands by
+# hand. Fewer boxes to type into is fewer boxes to typo.
+services:
+  - type: web
+    name: apv-roster-generator
+    runtime: python
+    plan: free                # change to "starter" ($7/mo) to stop it sleeping
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: SECRET_KEY
+        generateValue: true   # Render invents a random one; nothing to choose
