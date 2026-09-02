@@ -54,7 +54,7 @@ LEAGUES = {
         "kind": "football",
         "roster_style": "grouped",
         "file_prefix": "NFL",
-        "scoreboard_params": {"limit": 100},
+        "scoreboard_param_sets": ({"limit": 100},),
         "default_window_days": 7,
     },
     "college-football": {
@@ -64,7 +64,15 @@ LEAGUES = {
         "kind": "football",
         "roster_style": "grouped",
         "file_prefix": "NCAA",
-        "scoreboard_params": {"limit": 300},
+        # College football is split across divisions and the default answer is
+        # FBS only, so HBCU conferences were invisible: SWAC and MEAC live in FCS
+        # (group 81), SIAC and CIAA in Division II (group 35). All three are
+        # fetched and merged.
+        "scoreboard_param_sets": (
+            {"limit": 300},                  # FBS
+            {"groups": 81, "limit": 300},    # FCS  - SWAC, MEAC
+            {"groups": 35, "limit": 300},    # D-II - SIAC, CIAA
+        ),
         "default_window_days": 7,
     },
     "mens-college-basketball": {
@@ -74,7 +82,7 @@ LEAGUES = {
         "kind": "basketball",
         "roster_style": "flat",
         "file_prefix": "NCAABB",
-        "scoreboard_params": {"groups": 50, "limit": 400},
+        "scoreboard_param_sets": ({"groups": 50, "limit": 400},),
         "default_window_days": 1,
     },
     "nba": {
@@ -84,7 +92,7 @@ LEAGUES = {
         "kind": "basketball",
         "roster_style": "flat",
         "file_prefix": "NBA",
-        "scoreboard_params": {"limit": 100},
+        "scoreboard_param_sets": ({"limit": 100},),
         "default_window_days": 1,
     },
     "mlb": {
@@ -94,7 +102,7 @@ LEAGUES = {
         "kind": "baseball",
         "roster_style": "grouped",
         "file_prefix": "MLB",
-        "scoreboard_params": {"limit": 100},
+        "scoreboard_param_sets": ({"limit": 100},),
         "default_window_days": 1,
     },
     "nhl": {
@@ -104,7 +112,7 @@ LEAGUES = {
         "kind": "hockey",
         "roster_style": "grouped",
         "file_prefix": "NHL",
-        "scoreboard_params": {"limit": 100},
+        "scoreboard_param_sets": ({"limit": 100},),
         "default_window_days": 1,
     },
 }
@@ -134,6 +142,7 @@ _session = requests.Session()
 _cache = {}
 _CACHE_TTL = 60 * 30  # 30 minutes for team lists
 _ROSTER_TTL = 60 * 5  # 5 minutes for rosters/coaches
+_SCHEDULE_TTL = 60 * 5  # 5 minutes for schedules; one fetch serves everyone
 
 
 def _cached(key, ttl, producer):
@@ -275,7 +284,10 @@ def get_schedule(league, start_date, days=None):
                  Falls back to the league default (7 for football, 1 for the
                  daily-schedule sports).
 
-    Returns a list of dicts the front end can drop straight into a <select>.
+    Some leagues need more than one call. College football's scoreboard answers
+    with FBS unless asked otherwise, which quietly hid every HBCU conference, so
+    that league fetches FBS, FCS and Division II and merges them. Results are
+    deduplicated by event id, because a cross-division game appears in both.
     """
     cfg = league_cfg(league)
     if days is None:
@@ -288,56 +300,72 @@ def get_schedule(league, start_date, days=None):
     if days == 1:
         dates = str(start_date)
     else:
-        end = _shift_date(str(start_date), days - 1)
-        dates = f"{start_date}-{end}"
-
-    params = dict(cfg["scoreboard_params"])
-    params["dates"] = dates
+        window_end = _shift_date(str(start_date), days - 1)
+        dates = f"{start_date}-{window_end}"
 
     url = f"{BASE}/{cfg['sport']}/{cfg['path']}/scoreboard"
-    data = _get(url, params=params)
 
-    games = []
-    for event in data.get("events", []):
-        comps = event.get("competitions") or []
-        if not comps:
-            continue
-        competitors = comps[0].get("competitors", [])
-        home = away = None
-        for c in competitors:
-            team = c.get("team", {})
-            side = {
-                "id": str(team.get("id", "")),
-                "name": team.get("displayName", "Unknown"),
-                "abbreviation": (
-                    team.get("abbreviation") or team.get("shortDisplayName") or ""
-                ),
-            }
-            if c.get("homeAway") == "home":
-                home = side
-            elif c.get("homeAway") == "away":
-                away = side
-        if not home or not away:
-            continue
+    def load():
+        found = {}
+        errors = []
 
-        status = (
-            comps[0].get("status", {}).get("type", {}).get("shortDetail")
-            or event.get("status", {}).get("type", {}).get("shortDetail")
-            or ""
-        )
-        games.append(
-            {
-                "id": str(event.get("id", "")),
-                "label": f"{away['name']} at {home['name']}",
-                "date": event.get("date", ""),
-                "status": status,
-                "home": home,
-                "away": away,
-            }
-        )
+        for param_set in cfg["scoreboard_param_sets"]:
+            params = dict(param_set)
+            params["dates"] = dates
+            try:
+                data = _get(url, params=params)
+            except ESPNError as e:
+                errors.append(e)
+                continue
 
-    games.sort(key=lambda g: (g["date"], g["label"]))
-    return games
+            for event in data.get("events", []):
+                comps = event.get("competitions") or []
+                if not comps:
+                    continue
+
+                home = away = None
+                for c in comps[0].get("competitors", []):
+                    team = c.get("team", {})
+                    side = {
+                        "id": str(team.get("id", "")),
+                        "name": team.get("displayName", "Unknown"),
+                        "abbreviation": (
+                            team.get("abbreviation")
+                            or team.get("shortDisplayName")
+                            or ""
+                        ),
+                    }
+                    if c.get("homeAway") == "home":
+                        home = side
+                    elif c.get("homeAway") == "away":
+                        away = side
+                if not home or not away:
+                    continue
+
+                status = (
+                    comps[0].get("status", {}).get("type", {}).get("shortDetail")
+                    or event.get("status", {}).get("type", {}).get("shortDetail")
+                    or ""
+                )
+                label = f"{away['name']} at {home['name']}"
+                key = str(event.get("id") or f"{label}|{event.get('date', '')}")
+                found[key] = {
+                    "id": key,
+                    "label": label,
+                    "date": event.get("date", ""),
+                    "status": status,
+                    "home": home,
+                    "away": away,
+                }
+
+        # Only complain if every call failed. One division being unavailable
+        # should not hide the games that did come back.
+        if not found and errors:
+            raise errors[0]
+
+        return sorted(found.values(), key=lambda g: (g["date"], g["label"]))
+
+    return _cached(f"schedule:{league}:{dates}", _SCHEDULE_TTL, load)
 
 
 def _shift_date(yyyymmdd, delta_days):
