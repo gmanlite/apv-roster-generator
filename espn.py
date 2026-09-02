@@ -351,41 +351,65 @@ def _shift_date(yyyymmdd, delta_days):
 # Rosters and coaches
 # ---------------------------------------------------------------------------
 
+def _group_flat_roster(data):
+    """Turn a flat athlete list (?enable=roster) into football-style position groups."""
+    athletes = (data.get("team") or {}).get("athletes") or []
+    position_groups = {}
+    for athlete in athletes:
+        position_info = athlete.get("position", {})
+        pos_abbrev = (
+            position_info.get("abbreviation", "UNK")
+            if isinstance(position_info, dict)
+            else "UNK"
+        )
+        if pos_abbrev not in position_groups:
+            position_groups[pos_abbrev] = {"position": position_info, "items": []}
+        position_groups[pos_abbrev]["items"].append(athlete)
+    return {"athletes": list(position_groups.values())}
+
+
 def get_team_roster(team_id, league):
     """
     Fetch a roster, normalised to {'athletes': [ {position, items:[...]} , ... ]}.
 
-    Football, baseball and hockey have a dedicated /roster endpoint that is already
-    grouped by position. Basketball returns a flat athlete list via ?enable=roster,
-    so we group it here to match — same approach as the desktop app.
+    The feed exposes rosters two different ways and neither is reliable for every
+    league on every day — a hosted deployment hit a 404 on the /roster path for an
+    NFL team that answers perfectly well from a home connection. So both are tried.
+
+        /teams/{id}/roster        already grouped by position
+        /teams/{id}?enable=roster one flat list, grouped here
+
+    The preferred order depends on the sport, but either path can satisfy any
+    league, so a failure or an empty answer on one falls through to the other.
+    Only if both fail does the error surface.
     """
     cfg = league_cfg(league)
     team_id = str(team_id)
 
     def load():
-        if cfg["roster_style"] == "flat":
-            url = f"{BASE}/{cfg['sport']}/{cfg['path']}/teams/{team_id}"
-            data = _get(url, params={"enable": "roster"})
-            athletes = (data.get("team") or {}).get("athletes") or []
+        base = f"{BASE}/{cfg['sport']}/{cfg['path']}/teams/{team_id}"
 
-            position_groups = {}
-            for athlete in athletes:
-                position_info = athlete.get("position", {})
-                pos_abbrev = (
-                    position_info.get("abbreviation", "UNK")
-                    if isinstance(position_info, dict)
-                    else "UNK"
-                )
-                if pos_abbrev not in position_groups:
-                    position_groups[pos_abbrev] = {
-                        "position": position_info,
-                        "items": [],
-                    }
-                position_groups[pos_abbrev]["items"].append(athlete)
-            return {"athletes": list(position_groups.values())}
+        def grouped():
+            return _get(f"{base}/roster")
 
-        url = f"{BASE}/{cfg['sport']}/{cfg['path']}/teams/{team_id}/roster"
-        return _get(url)
+        def flat():
+            return _group_flat_roster(_get(base, params={"enable": "roster"}))
+
+        order = (flat, grouped) if cfg["roster_style"] == "flat" else (grouped, flat)
+
+        last_error = None
+        for attempt in order:
+            try:
+                data = attempt()
+            except ESPNError as e:
+                last_error = e
+                continue
+            if data.get("athletes"):
+                return data
+
+        if last_error:
+            raise last_error
+        return {"athletes": []}
 
     return _cached(f"roster:{league}:{team_id}", _ROSTER_TTL, load)
 
