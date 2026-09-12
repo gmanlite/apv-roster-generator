@@ -584,12 +584,26 @@ POSITION_MAPS = {
 }
 
 
+def _titlecase(text):
+    """Capitalise each word of a role name.
+
+    Not str.title(): that also lowercases the tail of every word, which turns
+    an apostrophe into a word break. Capitalising word by word keeps
+    "Ja'Marr"-shaped text intact if this is ever pointed at a name.
+    """
+    return " ".join(w[:1].upper() + w[1:] for w in text.split())
+
+
 def get_position_name(position_abbrev, kind="football"):
-    """Full position name for an abbreviation, interpreted for the given sport."""
+    """Full position name for an abbreviation, interpreted for the given sport.
+
+    Returned capitalised, so a caption reads "Wide Receiver Justin Jefferson #18"
+    rather than "wide receiver Justin Jefferson #18".
+    """
     if not position_abbrev:
         return ""
     table = POSITION_MAPS.get(kind, POSITION_MAPS["football"])
-    return table.get(position_abbrev, position_abbrev.lower())
+    return _titlecase(table.get(position_abbrev, position_abbrev.lower()))
 
 
 # Duplicate-jersey suffixes. When two players share a number, the suffix has to
@@ -686,7 +700,10 @@ def generate_code_replacement(
         head_coach = get_head_coach(team_info["id"], league)
         if head_coach:
             code = f"{team_prefix}HC"
-            coach_title = head_coach["title"]
+            # Capitalised to match the player rows - "Head Coach Andy Reid"
+            # next to "Quarterback Patrick Mahomes #15". Mixed casing in one
+            # column reads as a bug even when it isn't.
+            coach_title = _titlecase(head_coach["title"])
             if code_format in ("full_with_number", "full_no_number"):
                 replacement = f"{team_name} {coach_title} {head_coach['fullName']}"
             else:
@@ -723,11 +740,11 @@ def generate_code_replacement(
             code = f"{team_prefix}{jersey}"
 
             if code_format == "full_with_number":
-                replacement = f"{team_name} {position} {name} ({jersey})"
+                replacement = f"{team_name} {position} {name} #{jersey}"
             elif code_format == "full_no_number":
                 replacement = f"{team_name} {position} {name}"
             elif code_format == "position_with_number":
-                replacement = f"{position} {name} ({jersey})"
+                replacement = f"{position} {name} #{jersey}"
             elif code_format == "position_only":
                 replacement = f"{position} {name}"
             else:
@@ -748,8 +765,11 @@ def generate_code_replacement(
     final = []
     for code, replacement, pos_abbrev, name in replacements:
         if code in duplicates:
+            # Suffixing still happens - two players cannot share one code. It
+            # just no longer reports itself in the results panel, because the
+            # list was long, expected, and drowned the notes that matter
+            # (missing coach, athletes with no jersey number).
             unique_code = f"{code}{_duplicate_suffix(kind, pos_abbrev)}"
-            log.append(f"Duplicate jersey: {code} -> {unique_code} for {name} ({pos_abbrev})")
             final.append((unique_code, replacement))
         else:
             final.append((code, replacement))
