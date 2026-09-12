@@ -89,26 +89,35 @@ def check(label, got, want):
         print(f"  FAIL {label}\n       got:  {got!r}\n       want: {want!r}")
 
 
+def _raises(fn):
+    """True if calling fn() raises. Used to assert bad input is rejected."""
+    try:
+        fn()
+        return False
+    except Exception:
+        return True
+
+
 print("\nNFL, full_with_number, coaches on")
 r = espn.generate_code_replacement(
     TEAM, FAKE_FOOTBALL_ROSTER, "KC", "full_with_number", True, "nfl"
 )
 lines = r["content"].split("\n")
 expected = [
-    "KCHC\tKansas City Chiefs Head Coach Andy Reid",
-    "kchc\tKansas City Chiefs Head Coach Andy Reid",
+    "KCHC\tKansas City Chiefs head coach Andy Reid",
+    "kchc\tKansas City Chiefs head coach Andy Reid",
     # duplicate 4s sort by suffix: D before O
-    "KC4D\tKansas City Chiefs Cornerback Jaylen Watson #4",
-    "kc4d\tKansas City Chiefs Cornerback Jaylen Watson #4",
-    "KC4O\tKansas City Chiefs Wide Receiver Rashee Rice #4",
-    "kc4o\tKansas City Chiefs Wide Receiver Rashee Rice #4",
+    "KC4D\tKansas City Chiefs cornerback Jaylen Watson (4)",
+    "kc4d\tKansas City Chiefs cornerback Jaylen Watson (4)",
+    "KC4O\tKansas City Chiefs wide receiver Rashee Rice (4)",
+    "kc4o\tKansas City Chiefs wide receiver Rashee Rice (4)",
     # jersey 7 is unique, so no position suffix is added
-    "KC7\tKansas City Chiefs Place Kicker Harrison Butker #7",
-    "kc7\tKansas City Chiefs Place Kicker Harrison Butker #7",
-    "KC15\tKansas City Chiefs Quarterback Patrick Mahomes #15",
-    "kc15\tKansas City Chiefs Quarterback Patrick Mahomes #15",
-    "KC22\tKansas City Chiefs Cornerback Trent McDuffie #22",
-    "kc22\tKansas City Chiefs Cornerback Trent McDuffie #22",
+    "KC7\tKansas City Chiefs place kicker Harrison Butker (7)",
+    "kc7\tKansas City Chiefs place kicker Harrison Butker (7)",
+    "KC15\tKansas City Chiefs quarterback Patrick Mahomes (15)",
+    "kc15\tKansas City Chiefs quarterback Patrick Mahomes (15)",
+    "KC22\tKansas City Chiefs cornerback Trent McDuffie (22)",
+    "kc22\tKansas City Chiefs cornerback Trent McDuffie (22)",
     "",
 ]
 check("head coach row first", lines[0], expected[0])
@@ -129,14 +138,14 @@ r2 = espn.generate_code_replacement(
     TEAM, FAKE_FOOTBALL_ROSTER, "KC", "position_only", False, "nfl"
 )
 check("no coach row", "KCHC" in r2["content"], False)
-check("position-only text", r2["content"].split("\n")[0], "KC4D\tCornerback Jaylen Watson")
+check("position-only text", r2["content"].split("\n")[0], "KC4D\tcornerback Jaylen Watson")
 
 print("\nCustom prefix overrides abbreviation")
 r3 = espn.generate_code_replacement(
     TEAM, FAKE_FOOTBALL_ROSTER, "CHIEFS", "full_no_number", False, "nfl"
 )
 check("prefix applied", r3["content"].startswith("CHIEFS4D\t"), True)
-check("no #jersey in full_no_number", "#4" in r3["content"].split("\n")[0], False)
+check("no (jersey) in full_no_number", "(4)" in r3["content"].split("\n")[0], False)
 
 print("\nBasketball grouping + G/F/C duplicate suffixes")
 espn._cache.clear()
@@ -149,11 +158,11 @@ check(
     "flat roster grouped and dupes suffixed",
     [l for l in hoops if l.startswith("DUKE5")],
     [
-        "DUKE5C\tDuke Blue Devils Center Khaman Maluach #5",
-        "DUKE5G\tDuke Blue Devils Guard Tyrese Proctor #5",
+        "DUKE5C\tDuke Blue Devils center Khaman Maluach (5)",
+        "DUKE5G\tDuke Blue Devils guard Tyrese Proctor (5)",
     ],
 )
-check("unique hoops jersey untouched", hoops[0], "DUKE2\tDuke Blue Devils Forward Cooper Flagg #2")
+check("unique hoops jersey untouched", hoops[0], "DUKE2\tDuke Blue Devils forward Cooper Flagg (2)")
 
 print("\nNBA uses the same basketball path")
 espn._cache.clear()
@@ -170,27 +179,50 @@ check("combined header format", combined.split("\n")[0], "# Kansas City Chiefs (
 check("away header present", "\n# Denver Broncos (Away)\n" in combined, True)
 
 print("\nPosition names are interpreted per sport (shared abbreviations collide)")
-check("C: football", espn.get_position_name("C", "football"), "Center")
-check("C: basketball", espn.get_position_name("C", "basketball"), "Center")
-check("C: baseball", espn.get_position_name("C", "baseball"), "Catcher")
-check("C: hockey", espn.get_position_name("C", "hockey"), "Center")
-check("G: basketball", espn.get_position_name("G", "basketball"), "Guard")
-check("G: hockey", espn.get_position_name("G", "hockey"), "Goaltender")
-check("P: football", espn.get_position_name("P", "football"), "Punter")
-check("P: baseball", espn.get_position_name("P", "baseball"), "Pitcher")
-check("SS: football", espn.get_position_name("SS", "football"), "Strong Safety")
-check("SS: baseball", espn.get_position_name("SS", "baseball"), "Shortstop")
-check("D: hockey", espn.get_position_name("D", "hockey"), "Defenseman")
-check("unknown abbrev still capitalised", espn.get_position_name("XYZ", "hockey"), "Xyz")
-check("every word capitalised", espn.get_position_name("WR", "football"), "Wide Receiver")
-check("jersey uses a hash, not brackets",
-      "#15" in espn.generate_code_replacement(
-          TEAM, FAKE_FOOTBALL_ROSTER, "KC", "position_with_number", False, "nfl"
-      )["content"], True)
-check("no bracketed jersey anywhere",
-      "(15)" in espn.generate_code_replacement(
-          TEAM, FAKE_FOOTBALL_ROSTER, "KC", "position_with_number", False, "nfl"
-      )["content"], False)
+check("C: football", espn.get_position_name("C", "football"), "center")
+check("C: basketball", espn.get_position_name("C", "basketball"), "center")
+check("C: baseball", espn.get_position_name("C", "baseball"), "catcher")
+check("C: hockey", espn.get_position_name("C", "hockey"), "center")
+check("G: basketball", espn.get_position_name("G", "basketball"), "guard")
+check("G: hockey", espn.get_position_name("G", "hockey"), "goaltender")
+check("P: football", espn.get_position_name("P", "football"), "punter")
+check("P: baseball", espn.get_position_name("P", "baseball"), "pitcher")
+check("SS: football", espn.get_position_name("SS", "football"), "strong safety")
+check("SS: baseball", espn.get_position_name("SS", "baseball"), "shortstop")
+check("D: hockey", espn.get_position_name("D", "hockey"), "defenseman")
+check("unknown falls back to lowercase", espn.get_position_name("XYZ", "hockey"), "xyz")
+
+print("\nThe two added hash formats: capitalised position, #12 not (12)")
+hash_full = espn.generate_code_replacement(
+    TEAM, FAKE_FOOTBALL_ROSTER, "KC", "full_with_hash", True, "nfl"
+)["content"].split("\n")
+check("hash full: coach capitalised too", hash_full[0],
+      "KCHC\tKansas City Chiefs Head Coach Andy Reid")
+check("hash full: team, Position, name, #jersey",
+      "KC15\tKansas City Chiefs Quarterback Patrick Mahomes #15" in hash_full, True)
+check("hash full: two-word position capitalised",
+      "KC4O\tKansas City Chiefs Wide Receiver Rashee Rice #4" in hash_full, True)
+check("hash full: no brackets anywhere", any("(" in l for l in hash_full), False)
+
+hash_pos = espn.generate_code_replacement(
+    TEAM, FAKE_FOOTBALL_ROSTER, "KC", "position_with_hash", True, "nfl"
+)["content"].split("\n")
+check("hash position: no team name", hash_pos[0], "KCHC\tHead Coach Andy Reid")
+check("hash position: Position, name, #jersey",
+      "KC15\tQuarterback Patrick Mahomes #15" in hash_pos, True)
+
+print("\nThe four original formats are untouched by the additions")
+orig = espn.generate_code_replacement(
+    TEAM, FAKE_FOOTBALL_ROSTER, "KC", "position_with_number", True, "nfl"
+)["content"].split("\n")
+check("original still lowercase with brackets",
+      "KC15\tquarterback Patrick Mahomes (15)" in orig, True)
+check("original coach still lowercase", orig[0], "KCHC\thead coach Andy Reid")
+check("six formats offered", len(espn.CODE_FORMATS), 6)
+check("unknown format still rejected",
+      _raises(lambda: espn.generate_code_replacement(
+          TEAM, FAKE_FOOTBALL_ROSTER, "KC", "nope", False, "nfl")), True)
+
 check("duplicates no longer logged",
       any("Duplicate jersey" in n for n in espn.generate_code_replacement(
           TEAM, FAKE_FOOTBALL_ROSTER, "KC", "full_with_number", False, "nfl"
@@ -235,16 +267,16 @@ mlb = espn.generate_code_replacement(
     YANKS, MLB_ROSTER, "NYY", "full_with_number", True, "mlb"
 )
 lines = mlb["content"].split("\n")
-check("manager captioned correctly", lines[0], "NYYHC\tNew York Yankees Manager Aaron Boone")
-check("catcher not center", "NYY28\tNew York Yankees Catcher Austin Wells #28" in lines, True)
-check("right fielder", "NYY99\tNew York Yankees Right Fielder Aaron Judge #99" in lines, True)
-check("starting pitcher", "NYY45\tNew York Yankees Starting Pitcher Gerrit Cole #45" in lines, True)
+check("manager captioned correctly", lines[0], "NYYHC\tNew York Yankees manager Aaron Boone")
+check("catcher not center", "NYY28\tNew York Yankees catcher Austin Wells (28)" in lines, True)
+check("right fielder", "NYY99\tNew York Yankees right fielder Aaron Judge (99)" in lines, True)
+check("starting pitcher", "NYY45\tNew York Yankees starting pitcher Gerrit Cole (45)" in lines, True)
 check(
     "duplicate 30 split P vs IF",
     sorted(l for l in lines if l.startswith("NYY30")),
     [
-        "NYY30IF\tNew York Yankees Second Baseman Jazz Chisholm Jr. #30",
-        "NYY30P\tNew York Yankees Relief Pitcher Luke Weaver #30",
+        "NYY30IF\tNew York Yankees second baseman Jazz Chisholm Jr. (30)",
+        "NYY30P\tNew York Yankees relief pitcher Luke Weaver (30)",
     ],
 )
 
@@ -274,16 +306,16 @@ nhl = espn.generate_code_replacement(
     LEAFS, NHL_ROSTER, "TOR", "full_with_number", True, "nhl"
 )
 nl = nhl["content"].split("\n")
-check("head coach still head coach", nl[0], "TORHC\tToronto Maple Leafs Head Coach Craig Berube")
-check("goaltender not guard", "TOR60\tToronto Maple Leafs Goaltender Joseph Woll #60" in nl, True)
-check("center", "TOR34\tToronto Maple Leafs Center Auston Matthews #34" in nl, True)
-check("defenseman", "TOR44\tToronto Maple Leafs Defenseman Morgan Rielly #44" in nl, True)
+check("head coach still head coach", nl[0], "TORHC\tToronto Maple Leafs head coach Craig Berube")
+check("goaltender not guard", "TOR60\tToronto Maple Leafs goaltender Joseph Woll (60)" in nl, True)
+check("center", "TOR34\tToronto Maple Leafs center Auston Matthews (34)" in nl, True)
+check("defenseman", "TOR44\tToronto Maple Leafs defenseman Morgan Rielly (44)" in nl, True)
 check(
     "duplicate 23 split D vs F",
     sorted(l for l in nl if l.startswith("TOR23")),
     [
-        "TOR23D\tToronto Maple Leafs Defenseman Chris Tanev #23",
-        "TOR23F\tToronto Maple Leafs Left Wing Matthew Knies #23",
+        "TOR23D\tToronto Maple Leafs defenseman Chris Tanev (23)",
+        "TOR23F\tToronto Maple Leafs left wing Matthew Knies (23)",
     ],
 )
 

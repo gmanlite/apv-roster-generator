@@ -124,12 +124,25 @@ BASE = "https://site.api.espn.com/apis/site/v2/sports"
 # site API quietly stopped returning. See get_head_coach.
 CORE_BASE = "https://sports.core.api.espn.com/v2/sports"
 
+# The first four are the original Tkinter formats and must not change - files
+# already in the wild were built with them. The two "_hash" variants are
+# additions: capitalised position, jersey as #12 rather than (12).
 CODE_FORMATS = [
     ("full_with_number", "Prefix+Jersey#  ->  Team position Player Name (Jersey#)"),
     ("full_no_number", "Prefix+Jersey#  ->  Team position Player Name"),
     ("position_with_number", "Prefix+Jersey#  ->  position Player Name (Jersey#)"),
     ("position_only", "Prefix+Jersey#  ->  position Player Name"),
+    ("full_with_hash", "Prefix+Jersey#  ->  Team Position Player Name #Jersey"),
+    ("position_with_hash", "Prefix+Jersey#  ->  Position Player Name #Jersey"),
 ]
+
+# Formats that capitalise the position and use #12 instead of (12). Kept as a
+# set so the coach row can follow the same convention as the player rows -
+# mixed casing inside one file reads as a bug.
+HASH_FORMATS = {"full_with_hash", "position_with_hash"}
+
+# Formats that put the team name in front of the position.
+TEAM_PREFIXED_FORMATS = {"full_with_number", "full_no_number", "full_with_hash"}
 
 
 class ESPNError(RuntimeError):
@@ -597,13 +610,14 @@ def _titlecase(text):
 def get_position_name(position_abbrev, kind="football"):
     """Full position name for an abbreviation, interpreted for the given sport.
 
-    Returned capitalised, so a caption reads "Wide Receiver Justin Jefferson #18"
-    rather than "wide receiver Justin Jefferson #18".
+    Lowercase, as the original formats have always emitted. The newer "_hash"
+    formats capitalise it at the point of use rather than here, so the four
+    original formats keep producing byte-identical output.
     """
     if not position_abbrev:
         return ""
     table = POSITION_MAPS.get(kind, POSITION_MAPS["football"])
-    return _titlecase(table.get(position_abbrev, position_abbrev.lower()))
+    return table.get(position_abbrev, position_abbrev.lower())
 
 
 # Duplicate-jersey suffixes. When two players share a number, the suffix has to
@@ -700,11 +714,13 @@ def generate_code_replacement(
         head_coach = get_head_coach(team_info["id"], league)
         if head_coach:
             code = f"{team_prefix}HC"
-            # Capitalised to match the player rows - "Head Coach Andy Reid"
-            # next to "Quarterback Patrick Mahomes #15". Mixed casing in one
-            # column reads as a bug even when it isn't.
-            coach_title = _titlecase(head_coach["title"])
-            if code_format in ("full_with_number", "full_no_number"):
+            # In the hash formats the coach is capitalised too, so a file reads
+            # "Head Coach Andy Reid" above "Quarterback Patrick Mahomes #15".
+            # The original formats keep it lowercase, unchanged.
+            coach_title = head_coach["title"]
+            if code_format in HASH_FORMATS:
+                coach_title = _titlecase(coach_title)
+            if code_format in TEAM_PREFIXED_FORMATS:
                 replacement = f"{team_name} {coach_title} {head_coach['fullName']}"
             else:
                 replacement = f"{coach_title} {head_coach['fullName']}"
@@ -740,13 +756,17 @@ def generate_code_replacement(
             code = f"{team_prefix}{jersey}"
 
             if code_format == "full_with_number":
-                replacement = f"{team_name} {position} {name} #{jersey}"
+                replacement = f"{team_name} {position} {name} ({jersey})"
             elif code_format == "full_no_number":
                 replacement = f"{team_name} {position} {name}"
             elif code_format == "position_with_number":
-                replacement = f"{position} {name} #{jersey}"
+                replacement = f"{position} {name} ({jersey})"
             elif code_format == "position_only":
                 replacement = f"{position} {name}"
+            elif code_format == "full_with_hash":
+                replacement = f"{team_name} {_titlecase(position)} {name} #{jersey}"
+            elif code_format == "position_with_hash":
+                replacement = f"{_titlecase(position)} {name} #{jersey}"
             else:
                 raise ESPNError(f"Unknown code format '{code_format}'")
 
